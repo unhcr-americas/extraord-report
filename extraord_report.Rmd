@@ -1,0 +1,154 @@
+---
+title: Americas Extraordinary Report
+subtitle: "`r format(Sys.Date(),  '%d %B %Y')`"
+date: Regional Bureau for the Americas
+output: 
+  pagedown::html_paged:
+    css: ["unhcr-generic-fonts.css", "unhcr-generic-page.css", "unhcr-generic.css"]
+    front_cover: cover_grey.jpg
+    back_cover: unhcr-backcover.svg
+    toc: true
+    toc_depth: 2
+    number_sections: false
+toc-title: Contents
+---
+
+\newpage
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(httr)
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+```{r data}
+data <-
+  GET("https://kobo.unhcr.org/api/v2/assets/aLWoR3ZMFogWzChxaX28cP/data.json",
+      add_headers(Authorization = glue::glue("Token {Sys.getenv('KOBO_API_KEY')}"))) %>% 
+  content(as = "text") %>% 
+  jsonlite::fromJSON() %>% 
+  pluck("results") %>% 
+  as_tibble()
+
+data <- 
+  data %>% 
+  filter(`grRepOp/exReport`=="yes") %>% # keep only extraordinary reports
+  select(id = `_id`,
+         year = `_submission_time`,
+         week = `grRepOp/week`,
+         country = `grRepOp/country`,
+         context.narrative = `grContext/conDesGr/context`,
+         context.confidential = `grContext/conDesGr/confContext`,
+         poptrends.narrative = `grPopulationTrends/popDesGr/popTrends`,
+         poptrends.confidential = `grPopulationTrends/popDesGr/confPop`,
+         protection.narrative = `grProtectionConcerns/protecDesGr/protCon`,
+         protection.confidential = `grProtectionConcerns/protecDesGr/confProt`,
+         operations.narrative = `grOperation/opeDesGr/operInfo`,
+         operations.confidential = `grOperation/opeDesGr/confOperation`,
+         interagency.narrative = `grInteragencial/interDesGr/InteragencyInfo`,
+         interagency.confidential = `grInteragencial/interDesGr/confInter`,
+         aob.narrative = `grAoB/aobDesGr/AoBInfo`,
+         aob.confidential = `grAoB/aobDesGr/confAoB`)
+
+data <- 
+  data %>% 
+  mutate(year = year(year),
+         week = parse_number(week)) %>%
+  pivot_longer(-c(id, year, week, country), names_pattern = "(.+)\\.(.+)", names_to = c("section", "dimension")) %>% 
+  pivot_wider(names_from = "dimension", values_from = "value")
+
+data <- 
+  data %>% 
+  mutate(country = case_when(country == "CostaRica" ~ "Costa Rica",
+                             country == "DominicanRepublic" ~ "Dominican Rep.",
+                             country == "NorthernCaribbean" ~ "Northern Caribbean",
+                             country == "TrinidadTobago" ~ "Trinidad and Tobago",
+                             country == "UnitedStates" ~ "United States of America",
+                             country == "Bolivia" ~ "Bolivia (Plurinational State of)",
+                             country == "Curaçao" ~ "Curacao ",
+                             country == "Venezuela" ~ "Venezuela (Bolivarian Republic of)",
+                             is.na(country) ~ "The Americas",
+                             TRUE ~ country),
+         section = c(aob = "A.O.B", 
+                      context = "Context", 
+                      interagency = "Inter-Agency",
+                      operations = "Operations", 
+                      poptrends = "Population Trends", 
+                      protection = "Protection Concerns")[section],
+         narrative = replace_na(narrative, "Nothing to report."))
+
+data <- 
+  data %>% 
+  left_join(popdata::pd_countries %>% select(country = name, region)) %>% 
+  mutate(region = case_when(country == "Northern Caribbean" ~ "Caribbean",
+                            country == "The Americas" ~ "Regional Overview",
+                            TRUE ~ region))
+
+data <- 
+  data %>% 
+  mutate(region = region %>% factor() %>% fct_relevel("Regional Overview", after = 0),
+         country = factor(country),
+         section = factor(section, levels = c("Context", "Population Trends", "Protection Concerns",
+                                              "Operations", "Inter-Agency", "A.O.B")))
+```
+
+```{r renderers}
+render_section <- function(data, .section) {
+  cat(glue::glue("### {.section}"), sep = "\n")
+  data <- data %>% filter(section == .section)
+  if (!is.na(data$confidential) & data$confidential == "yes")
+    cat("<strong style='color: #EF4A60'>CONFIDENTIAL</strong>", sep = "\n")
+  cat("\n")
+  cat(data$narrative, sep = "\n")
+  cat("\n")
+}
+
+render_country <- function(data, .country) {
+  cat(glue::glue("## {.country}"), sep = "\n")
+  data <- data %>% filter(country == .country)
+  walk(levels(fct_drop(data$section)), ~render_section(data, .))
+}
+
+render_region <- function(data, .region) {
+  cat(glue::glue("# {.region}"), sep = "\n")
+  data <- data %>% filter(region == .region)
+  walk(levels(fct_drop(data$country)), ~render_country(data, .))
+}
+```
+
+```{r pipeline, results='asis'}
+data <- data %>% filter(year == isoyear(today()), week == isoweek(today())-1)
+walk(levels(fct_drop(data$region)), ~render_region(data, .))
+```
+
+::: {.back-cover}
+
+::: {.back-header}
+<h1 class="back-title"></h1>
+<h1 class="back-subtitle"></h1>
+:::
+
+::: {.back-footer}
+For more information please contact:
+
+::: {.back-contact}
+[Carmen Asenjo]{.back-name}
+
+Information Management Officer
+
+[asenjo@unhcr.org](mailto:asenjo@unhcr.org)
+:::
+
+::: {.back-contact}
+[Matheus Soldi Hardt]{.back-name}
+
+Associate Information Management Officer
+
+[matheus@unhcr.org](mailto:matheus@unhcr.org)
+:::
+
+:::
+
+:::
