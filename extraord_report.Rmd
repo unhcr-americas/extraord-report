@@ -54,9 +54,11 @@ data <-
 
 data <- 
   data %>% 
-  mutate(year = year(year),
+  mutate(date = date(year),
+         hour = hms::as_hms(ymd_hms(year)),
+         year = year(year),
          week = parse_number(week)) %>%
-  pivot_longer(-c(id, year, week, country), names_pattern = "(.+)\\.(.+)", names_to = c("section", "dimension")) %>% 
+  pivot_longer(-c(id, date, hour, year, week, country), names_pattern = "(.+)\\.(.+)", names_to = c("section", "dimension")) %>% 
   pivot_wider(names_from = "dimension", values_from = "value")
 
 data <- 
@@ -98,7 +100,7 @@ data <-
 render_section <- function(data, .section) {
   cat(glue::glue("### {.section}"), sep = "\n")
   data <- data %>% filter(section == .section)
-  if (!is.na(data$confidential) & data$confidential == "yes")
+  if (any(!is.na(data$confidential) & data$confidential == "yes"))
     cat("<strong style='color: #EF4A60'>CONFIDENTIAL</strong>", sep = "\n")
   cat("\n")
   cat(data$narrative, sep = "\n")
@@ -119,7 +121,13 @@ render_region <- function(data, .region) {
 ```
 
 ```{r pipeline, results='asis'}
-data <- data %>% filter(year == isoyear(today()), week == isoweek(today())-1)
+data <- data %>% filter((date > today()-1) | (date == today()-2 & hour > hms::as_hms("22:00:00")))
+
+data <- data %>%
+  ungroup() %>%
+  select(country, region, section, confidential,narrative) %>%
+  distinct()
+
 walk(levels(fct_drop(data$region)), ~render_region(data, .))
 ```
 
