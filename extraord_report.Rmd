@@ -121,12 +121,12 @@ render_region <- function(data, .region) {
 ```
 
 ```{r pipeline, results='asis'}
-data <- data %>% filter((date > today()-1) | (date == today()-2 & hour > hms::as_hms("22:00:00")))
+if (wday(today(), label=TRUE) == "Tue")
+  diff_day <- 4
+if (wday(today(), label=TRUE) == "Fri")
+  diff_day <- 3
 
-data <- data %>%
-  ungroup() %>%
-  select(country, region, section, confidential,narrative) %>%
-  distinct()
+data <- data %>% filter(date > (today()-diff_day))
 
 walk(levels(fct_drop(data$region)), ~render_region(data, .))
 ```
