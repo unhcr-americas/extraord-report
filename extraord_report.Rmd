@@ -122,7 +122,7 @@ render_region <- function(data, .region) {
 ```
 
 ```{r pipeline, results='asis'}
-diff_day <- 3
+diff_day <- 7
 
 data <- data %>% filter(date >= (today()-diff_day))
 
